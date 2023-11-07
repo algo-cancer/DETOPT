@@ -9,8 +9,8 @@
 **(on left)** A heatmap shows the average descendant cell fraction (DCF)[^1] of copy number neutral SNVs in each subclone (row) in each sample (column). The average DCF of a mutational cluster, i.e., subclone, is the proportion of cells in a sample that harbor those mutations; this includes both the subclone in which the mutation was first acquired and all its descendants. Here, we have grouped and ordered subclones such that the ancestor-descendant relationships in the base tree are represented as best as possible [^2]. As it can be seen, the order of the subclones in our base tree is not only (i) consistent with the chronological order in which samples were obtained, but also (ii) consistent with the DCFs of subclones within a sample. To observe (i), for any pair of subclones (rows), a subclone that is present only in samples from a later time point is always a descendant of a subclone that is present at an earlier time point. To observe (ii), in a sample (column) for any pair of subclones (rows), the ancestral subclone always has a higher DCF than the descendant subclone. **(on right)** Base tree topology as shown in Figure 3 of the manuscript. Subclones (nodes) are colored based on the earliest sampling time point at which the subclone was first observed. Similar to the heatmap, in this complementary visualization, the longitudinal structure of the base tree is apparent. The raw `.tsv` file for the heatmap can be download [here](demo_outputs/4355_dcf_table.tsv).
 
 <p align="center">
-  <img src="https://github.com/Chih-Hao-Wu/repo-example/blob/main/real_data/demo/demo_outputs/4355_dcf.png" width="400" height="750">
-  <img src="https://github.com/Chih-Hao-Wu/repo-example/blob/main/real_data/demo/demo_outputs/base_tree_sampling_times.png" width="400" height="750">
+  <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/4355_dcf.png" width="400" height="750">
+  <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/base_tree_sampling_times.png" width="400" height="750">
 </p>
 
 ## Output of `DETOPT` on patient 4355 data
