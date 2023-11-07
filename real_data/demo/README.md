@@ -16,7 +16,7 @@
 ## Output of `DETOPT` on patient 4355 data
 We provide the output for running `DETOPT` on patient 4355 data. The raw `.tsv` file can be downloaded [here](demo_outputs/variant_placements.tsv).
 
-![](demo_outputs/Book2.png)
+![](demo_outputs/variant_placements.png)
 
 <!-- References -->
 [^1]: Satas, G., Zaccaria, S., El-Kebir, M., Raphael, B.J.: Decifering the elusive cancer cell fraction in tumor heterogeneity and evolution. Cell Systems 12(10), 1004–1018 (2021) [http://dx.doi.org/10.1016/j.cels.2021.07.006](http://dx.doi.org/10.1016/j.cels.2021.07.006)
