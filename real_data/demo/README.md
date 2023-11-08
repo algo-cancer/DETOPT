@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/4355_dcf.png" width="400" height="750">
-  <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/base_tree_sampling_times.png" width="400" height="750">
+  <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/base_tree_sampling_times.png" width="380" height="750">
 </p>
 
 ## Output of `DETOPT` on patient 4355 data
