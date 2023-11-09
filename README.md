@@ -36,18 +36,18 @@ $ conda activate detopt
 # Usage
 ```
 (detopt) foo@bar:$ python detopt.py --help
-usage: detopt.py [--help] -s SNV_FILE -t TREE_FILE -h SAMPLES -p CNA_WEIGHT -d DATA_DIR -o OUT
+usage: DETOPT [+h] [-p [CNA_REG]] [-h [N_SAMPLES]] -d DATA_DIR -o OUT -s SNV_FILE -t TREE_FILE
 
-DETOPT (DETermining Optimal Placement in Tumor progression history)
+(DETermining Optimal Placement in Tumor progression history)
 
 options:
-  --help                                    show this help message and exit
-  -s SNV_FILE,    --snv_file    SNV_FILE    *.input.tsv file containing information about read counts and allele-copy number calls of SNVs
-  -t TREE_FILE,   --tree_file   TREE_FILE   *.tree file containing information for each subclone, the PARENT_ID, MUTATIONS_AT_NODE, SAMPLE_IDS, NODE_FREQUENCIES
-  -h SAMPLES,     --samples     SAMPLES     number of samples <optional>
-  -p CNA_WEIGHT,  --cna_weight  CNA_WEIGHT  regularization value/weight (default 0.25)
-  -d DATA_DIR,    --data_dir    DATA_DIR    directory containing required snv and tree files
-  -o OUT,         --out         OUT         output filename, optionally with filepath
+  +h, ++help            			            show this help message and exit
+  -p [CNA_REG], 	--cna_reg   [CNA_REG]	  regularization weight (default: 0.25)
+  -h [N_SAMPLES], --n_samples [N_SAMPLES]	number of samples
+  -d DATA_DIR, 		--data_dir   DATA_DIR	  directory containing required `snv_file` and `tree_file` files
+  -o OUT, 		    --out        OUT     		output filename prefix, optionally with filepath
+  -s SNV_FILE, 		--snv_file   SNV_FILE	  `snv_file` file containing information about read counts and allele-copy number calls of SNVs
+  -t TREE_FILE, 	--tree_file   TREE_FILE	`tree_file` file containing information about the base tree
 ```
 
 <a name="input"></a>
