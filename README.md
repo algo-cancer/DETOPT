@@ -44,8 +44,8 @@ options:
   --help                                    show this help message and exit
   -s SNV_FILE,    --snv_file    SNV_FILE    *.input.tsv file containing information about read counts and allele-copy number calls of SNVs
   -t TREE_FILE,   --tree_file   TREE_FILE   *.tree file containing information for each subclone, the PARENT_ID, MUTATIONS_AT_NODE, SAMPLE_IDS, NODE_FREQUENCIES
-  -h SAMPLES,     --samples     SAMPLES     number of samples
-  -p CNA_WEIGHT,  --cna_weight  CNA_WEIGHT  regularization value/weight
+  -h SAMPLES,     --samples     SAMPLES     number of samples <optional>
+  -p CNA_WEIGHT,  --cna_weight  CNA_WEIGHT  regularization value/weight (default 0.25)
   -d DATA_DIR,    --data_dir    DATA_DIR    directory containing required snv and tree files
   -o OUT,         --out         OUT         output filename, optionally with filepath
 ```
@@ -58,8 +58,8 @@ options:
   -t|`tree_file`| - | refer to extended description of required input files
   -p|`cna_weight`| *&rho;* |regularization parameter, denoted as in the manuscript, introduced to balance the two objective terms. By default, *&rho;* is set to 0.25.
   -h|`num_samples`| *h* | the total number of samples from the multi-sample bulk DNA sequencing data 
-  -d|`data_dir`| - | a relative path to the directory in which the input `.snvs.input` and `.tree` files are located; provide the path to the directory without the trailing '/'
-  -o|`out`| - | the filename for which `DETOPT` will create a file containing the output in the current working directory, e.g., `<out>.detopt.tsv`. By prepending filename with a filepath, the file can be writting to another directory, e.g., `</path/to/out>.detopt.tsv`
+  -d|`data_dir`| - | a relative path to the directory in which the input `.snvs.input` and `.tree` files are located
+  -o|`out`| - | the filename for which `DETOPT` will create files containing the outputs in the current working directory, e.g., `<out>.detopt.tsv`. By prepending filename with a filepath, the file can be writting to another directory, e.g., `</path/to/out>.detopt.tsv`
   
 <a name="input"></a>
 <details>
