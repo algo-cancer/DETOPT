@@ -359,7 +359,9 @@ def main():
                         prefix_chars='-+',
                         add_help=False
                         )
-    parser.add_argument('+h', '++help', action='help')
+    parser.add_argument('+h', '++help', action='help', 
+                        help='show this help message and exit'
+                        )
     parser.add_argument('-p', '--cna_reg', nargs='?', default=.25, 
                         type=float, help='regularization weight (default: %(default)s)'
                         )
