@@ -5,3 +5,5 @@
   <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/4355_dcf.png" width="400" height="750">
   <img src="https://github.com/algo-cancer/DETOPT/blob/main/real_data/demo/demo_outputs/base_tree_sampling_times.png" width="380" height="750">
 </p>
+
+[^2]: Because there are branching events, there are some instances on the heatmap where two consecutive rows do not preserve the ancestor-descendant relationship, e.g., both row (subclone) 17 and row (subclone) 14 are descendants of row (subclone) 4 but in the heatmap, we can only place row 14 under row 4.
