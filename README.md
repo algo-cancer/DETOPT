@@ -41,13 +41,13 @@ usage: DETOPT [+h] [-p [CNA_REG]] [-h [N_SAMPLES]] -d DATA_DIR -o OUT -s SNV_FIL
 (DETermining Optimal Placement in Tumor progression history)
 
 options:
-  +h, ++help            			            show this help message and exit
-  -p [CNA_REG], 	--cna_reg   [CNA_REG]	  regularization weight (default: 0.25)
-  -h [N_SAMPLES], --n_samples [N_SAMPLES]	number of samples
-  -d DATA_DIR, 		--data_dir   DATA_DIR	  directory containing required `snv_file` and `tree_file` files
-  -o OUT, 		    --out        OUT     		output filename prefix, optionally with filepath
-  -s SNV_FILE, 		--snv_file   SNV_FILE	  `snv_file` file containing information about read counts and allele-copy number calls of SNVs
-  -t TREE_FILE, 	--tree_file   TREE_FILE	`tree_file` file containing information about the base tree
+  +h, ++help            			show this help message and exit
+  -p [CNA_REG], 	--cna_reg [CNA_REG]	regularization weight (default: 0.25)
+  -h [N_SAMPLES], 	--n_samples [N_SAMPLES]	number of samples
+  -d DATA_DIR, 		--data_dir DATA_DIR	directory containing required `snv_file` and `tree_file` files
+  -o OUT, 		--out OUT     		output filename prefix, optionally with filepath
+  -s SNV_FILE, 		--snv_file SNV_FILE	`snv_file` file containing information about read counts and allele-copy number calls of SNVs
+  -t TREE_FILE, 	--tree_file TREE_FILE	`tree_file` file containing information about the base tree
 ```
 
 <a name="input"></a>
