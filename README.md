@@ -56,8 +56,8 @@ options:
   --------|------------------|---------------|---------------
   -s|`snv_file`| - | refer to extended description of required input files 
   -t|`tree_file`| - | refer to extended description of required input files
-  -p|`cna_weight`| *&rho;* |regularization parameter, denoted as in the manuscript, introduced to balance the two objective terms. By default, *&rho;* is set to 0.25.
-  -h|`num_samples`| *h* | the total number of samples from the multi-sample bulk DNA sequencing data 
+  -p|`cna_reg`| *&rho;* |regularization parameter, denoted as in the manuscript, introduced to balance the two objective terms. By default, *&rho;* is set to 0.25.
+  -h|`n_samples`| *h* | the total number of samples from the multi-sample bulk DNA sequencing data 
   -d|`data_dir`| - | a relative path to the directory in which the input `.snvs.input` and `.tree` files are located
   -o|`out`| - | the filename for which `DETOPT` will create files containing the outputs in the current working directory, e.g., `<out>.detopt.tsv`. By prepending filename with a filepath, the file can be writting to another directory, e.g., `</path/to/out>.detopt.tsv`
   
