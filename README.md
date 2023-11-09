@@ -41,7 +41,7 @@ usage: DETOPT [+h] [-p [CNA_REG]] [-h [N_SAMPLES]] -d DATA_DIR -o OUT -s SNV_FIL
 (DETermining Optimal Placement in Tumor progression history)
 
 options:
-  +h, ++help            			show this help message and exit
+  +h, 			++help            	show this help message and exit
   -p [CNA_REG], 	--cna_reg [CNA_REG]	regularization weight (default: 0.25)
   -h [N_SAMPLES], 	--n_samples [N_SAMPLES]	number of samples
   -d DATA_DIR, 		--data_dir DATA_DIR	directory containing required `snv_file` and `tree_file` files
@@ -100,7 +100,9 @@ NODE_ID    PARENT_ID    MUTATIONS_AT_NODE    SAMPLE_IDS                 NODE_FRE
 <a name="output"></a>
 **OUTPUTS**  </br>
 > [!IMPORTANT]
->`DETOPT` returns a tab-separated `.detopt.tsv` file containing the inferred placements of copy number gain and loss events. If an SNV was impacted by more than one copy-number aberration event, each copy-number state and its inferred placement are designated by a unique index that has no particular signficance other than to distinguish these events.
+>`DETOPT` returns a tab-separated `_assignments.tsv` file containing the inferred placements of copy number gain and loss events. If an SNV was impacted by more than one copy-number aberration event, each copy-number state and its inferred placement are designated by a unique index that has no particular signficance other than to distinguish these events.
+
+`DETOPT` produces two (2) additional files. `_mut_copy_numbers.tsv` contains the allele-specific number of copies of the mutant allele (on A,B) for each mutation (row) in each node (column). `_tot_copy_numbers.tsv` contains the allele-specific number of total copies of each allele (on A,B) for each mutation (row) in each node (column). 
 
 <a name="demos"></a>
 # Demos
