@@ -3,16 +3,7 @@
 From a fixed tree constructed using `CITUP2` using copy number neutral 
 mutations, assign the placement at a node where a copy number affected 
 mutation and the nodes at which the copy number state changes to a 
-distinct state. We introduce the following as constraints:
-
-TODO add desc. constraints
-
-constraints 1 through 18 are ok 
-added through 22
-
-Jul 22, all constraints added and assignemnt mostly ok for copy number affected mutations
-
-TODO simplify ab alleles
+distinct state.
 """
 
 import gurobipy as gp
@@ -22,16 +13,15 @@ from detopt_util import *
 N_THREADS = 4 # for local version
 
 
-def optimise(
-        states: list,
-        parent: dict,
-        node_freq: dict,
-        vafs: dict,
-        seg_frac_cns: dict,
-        sample_node_frac: dict,
-        vaf_reg: int = 1, # regularisation factors
-        cna_reg: int = 1
-) -> tuple:
+def optimise(states: list,
+             parent: dict,
+             node_freq: dict,
+             vafs: dict,
+             seg_frac_cns: dict,
+             sample_node_frac: dict,
+             vaf_reg: int = 1,
+             cna_reg: int = 0.25
+             ) -> tuple:
     """Returns a tuple with the node to which the first instance of the 
     mutation is assigned,the nodes to which the first instance of each 
     distinct copy number (excl. 1,1 normal) have been assigned, and the 
@@ -51,6 +41,8 @@ def optimise(
 	frac_cns: dict
 		fractional copy number of each mutation in each sample {mut1: 
         {sample1: cn1 , sample2: cn2}, mut2: {sample1: cn1 , sample2: cn2}}
+    sample_node_frac:
+    cna_reg
     """
 
     nodes = parent.keys()
@@ -349,310 +341,28 @@ def optimise(
             model.setObjective(objective, gp.GRB.MINIMIZE)
             model.optimize()
 
-
-            # debug wrong node assignments at leaves
-            """contr_23, contr_5 = 0, 0 
-            for sample in vafs.keys():
-                contr_23 += node_freq["5"][sample]
-                contr_5 += node_freq["23"][sample]
-
-            print(contr_23, contr_5)"""
-
-            """# check objective function
-            obj = 0
-            for sample in vafs.keys():
-
-                vaf_discrep = 0
-                cna_discrep = 0
-
-                for k in nodes:
-                    cna_discrep += (copy_a[k].x + copy_b[k].x) * node_freq[k][sample]
-
-                    if k != "ROOT":
-                        vaf_discrep += (mut_a_iv[k].x + mut_b_iv[k].x) * node_freq[k][sample]
-                    else: 
-                        vaf_discrep += (mut_a_iv[k] + mut_b_iv[k]) * node_freq[k][sample]
-
-                obj += 1 * abs(vaf_discrep/seg_frac_cns[sample] - vafs[sample]) + 0.25 * abs(cna_discrep - seg_frac_cns[sample])
-                        
-            print(f'\tExternally Calculated Objective = {obj}') 
-
-            print(f'\n\tOptimal Objective = {model.objVal}\n')
-
-            print("\n")
-
-            for k in theta.keys():
-                print(k, theta[k])
-            """
-
-
-
-            #for v in nodes:
-            #    print(v, par_mut_indic[v])
-
-
-
-
-            #for k in delta.keys():
-            #        print(k, delta[k])
-
-            for node in nodes:
-                if node != "ROOT":
-                    print(node, "A (copies mutation): ", mut_a_iv[node].x, " B (copies mutation): ", mut_b_iv[node].x, " A (copies total): ",copy_a[node].x, " B (copies total): ", copy_b[node].x)
-
-            #try:
-            #    vaf_disc = []
-            #    for sample in vafs.keys():
-            #        disc = (aux_vaf[sample].x)
-            #        #print(disc)
-            #        vaf_disc.append(disc)
-                
-                # print(sum(vaf_disc)/len(vafs.keys()))#, len(vafs.keys()))
-            #except:
-            #    pass
-
-            # FROM SURAJ
             try:
-                node_assigned = None
-                state_assignments = []
-                for node in delta.keys():
-                    if node == 'ROOT': continue
-                    if not isinstance(delta[node], int): 
-                        if delta[node].x > 0.99999: node_assigned = node # see file Screenshot 2023-07-17 at 11.37.51 PM in desktop OR do !=0; suggestion, do rounding instead or np.close
-                    else: 
-                        if delta[node] == 1: node_assigned = node
-
-                    for state in states:
-                        if not isinstance(theta[node][state], int): 
-                            if theta[node][state].x > 0.99999: state_assignments.append((state, node)) # see file Screenshot 2023-07-19 at 3.34.09 PM
-                        else: 
-                            if theta[node][state] == 1: state_assignments.append((state, node))
-                    
-                #for k in delta.keys():
-                #    print(k, delta[k])
-                
-                # BUG Jul 19; does not assign copy number to a node or not pulling from right variable ??? resolved.
-                if len(state_assignments) == 0:
-                    state_assignments = [((state), "UNKNOWN ERROR")]
-
-                print(f'\tOptimal Objective = {model.objVal}, {node_assigned}, {state_assignments}')
                 obj_val = model.objVal
-                return (obj_val, node_assigned, state_assignments)
-                # print(f'\tOptimal Objective = {model.objVal}, {node_assigned}, {state_assignments}')
-                # assert(node_assigned != None)
-                # return (node_assigned, model.objVal, model)
-            except:
-                # Failed to find any valid assignment - just return the root
-                for k in delta.keys():
-                    # ADD BACK print(k, delta[k])
-                    pass # REMOVE
 
-                for k in theta.keys():
-                    # ADD BACKprint(k, theta[k])
-                    pass # REMOVE
-                
-                return ('ROOT', 1e6, model)
-
-            # TODO define the objective function
-            # objective is to minimize the weighted sum of i) difference between observed and tree-implied variant allele frequencies
-           
-            # TODO introduce vaf_term of objective function
-            # across all nodes in the tree for all samples
-
-            """# auxillary variables
-            aux_total = {
-                sample: model.addVar(vtype=gp.GRB.CONTINUOUS, name=f"aux_total_{sample}")
-                for sample in vafs.keys()
-            } # to allow division
-            aux_implied = {
-                sample: model.addVar(vtype=gp.GRB.CONTINUOUS, name=f"aux_implied_{sample}")
-                for sample in vafs.keys()
-            } # represents implied vaf
-            aux_abs_vafs = {
-                sample: model.addVar(vtype=gp.GRB.CONTINUOUS, name=f"aux_abs_vafs_{sample}")
-                for sample in vafs.keys()
-            } # to allow absolute values
-            aux_abs_cnas_implied = {
-                sample: model.addVar(vtype=gp.GRB.CONTINUOUS, name=f"aux_abs_cnas_implied_{sample}")
-                for sample in vafs.keys()
-            } # to allow absolute values
-            aux_abs_cnas = {
-                sample: model.addVar(vtype=gp.GRB.CONTINUOUS, name=f"aux_abs_cnas_{sample}")
-                for sample in vafs.keys()
-            } # to allow absolute values
-
-            for sample in vafs.keys():
-
-                var = gp.quicksum([(mut_a_iv[node] + mut_b_iv[node]) * node_freq[node][sample] for node in nodes]) # numerator
-                total = gp.quicksum([(copy_a[node] + copy_b[node]) * node_freq[node][sample] for node in nodes]) # denominator
-
-                model.addConstr(aux_total[sample] * total == 1)
-                model.addConstr(aux_implied[sample] == (var * aux_total[sample] - vafs[sample]))
-                model.addConstr(aux_abs_vafs[sample] == gp.abs_(aux_implied[sample]))
-
-                model.addConstr(aux_abs_cnas_implied[sample] == total - seg_frac_cns[sample])
-                model.addConstr(aux_abs_cnas[sample] == gp.abs_(aux_abs_cnas_implied[sample]))
-
-                objective += vaf_reg * aux_abs_vafs[sample] + cna_reg * aux_abs_cnas[sample]
-
-            model.setObjective(objective, gp.GRB.MINIMIZE) # rewrite the following
-            model.optimize()"""
-
-            """print("\n")
-            
-            for k in aux_abs_vafs.keys():
-                print(k, aux_abs_vafs[k], vafs[k])
-
-            print("\n")
-
-            for node in delta.keys():
-                    if node == 'ROOT': continue
-                    print(node, delta[node], theta[node])
-                    #if theta[node].x == 1: cn_node_assigned = node"""
-
-            #print(f'\nOptimal Objective = {model.objVal}')
-
-            #print(f'\nOptimal Objective = {model.objVal}, {node_assigned}')
-            
-            """try:
-                node_assigned = None
-                for node in delta.keys():
-                    if node == 'ROOT': continue
-                    if delta[node].x == 1: node_assigned = node
-                    #if theta[node].x == 1: cn_node_assigned = node
-
-                print(f'\nOptimal Objective = {model.objVal}, {node_assigned}')
-                
-                print("\n")
-
-                for k in delta.keys():
-                    print(k, delta[k])
-
-                print("\n")
-
-                for k in theta.keys():
-                    print(k, theta[k])
-
-                assert(node_assigned != None)
-                return (node_assigned, model.objVal, model)
-            except:
-                # Failed to find any valid assignment - just return the root
-                print(f'Failed to find any valid assignment')
-                return ('ROOT', 1e6, model)"""
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            # dummy optimisation function
-            """x = model.addVar(vtype=gp.GRB.INTEGER, name="x")
-            model.setObjective(x, gp.GRB.MAXIMIZE)
-            model.addConstr(x <= 1)
-
-            model.optimize()"""
-
-            #print(model.getVars())
-
-            #print(delta)
-            # variables, store values
-
-            #for k in aux_implied.keys():
-            #    print(k, aux_implied[k])
-
-            for k in delta.keys():
-                print(k, delta[k])
- 
-            print("\n")
-
-            for k in theta.keys():
-                print(k, theta[k])
- 
-            print("\n")
-
-            for k in psi.keys():
-                print(k, psi[k])
-
-            print("\n")
-
-            for node in nodes: 
-                print(copy_a[node], copy_b[node])
-
-            #
-            # print("\n")
-
-            #for k in diff_abs_a_aux.keys():
-            #    print(k, diff_abs_a_aux[k], diff_abs_b_aux[k])
-
-            print("\n")
-
-            for k in e_a.keys():
-                print(k, e_a[k], e_b[k])
-
-            print("\n")
-
-            for k in l_a.keys():
-                print(k, l_a[k], l_b[k])
-
-            print("\n")
-
-            for k in g_a.keys():
-                print(k, g_a[k], g_b[k])
-
-            print("\n")
-
-            print(mu_a, mu_b)
-
-            print("\n")
-
-            for k in mut_a_iv.keys():
-                print(k, mut_a_iv[k], mut_b_iv[k])
-    
-            print("\n")
-
-            for k in mut_on_allcopies_a.keys():
-                print(k, mut_on_allcopies_a[k], mut_on_allcopies_b[k])
-
-            print("\n")
-
-            for k in par_mut_indic.keys():
-                if k != "ROOT":
-                    print(k, par_mut_indic[k], par_mut_indic[parent[k]])
-
-            print("\n")
-
-            for k in aux_contr_copy_a.keys():
-                if k != "ROOT":
-                    print(k, aux_contr_copy_a[k]["parent"], aux_contr_copy_a[k]["child"])
-
-            print("\n")
-
-            """for node in delta.keys():
-                    if node == 'ROOT': continue
-                    print(node, delta[node], theta[node])
-                    #if theta[node].x == 1: cn_node_assigned = node"""
-
-            #print("\n")
-
-            #print(vafs)
-
-            #print("\n")
-    
-            #print(sum([node_freq[k]["4324-AMet-Frag2_FrTu_September_15_2018"] for k in node_freq.keys()]))
-
-            # DO WE ALLOW GAIN AND MUTATION ON THE SAME NODE?
+                mut_a, mut_b, tot_a, tot_b = {}, {}, {}, {}
+                cna_assignment = {}
+                for node in nodes:
+                    if round(delta[node].x, ndigits=None) == 1: 
+                        #print(f"SNV {node}")
+                        node_assignment = node
+                    
+                    for state in states:
+                        
+                        if round(theta[node][state].x, ndigits=None) == 1 and state != (1, 1): 
+                            #print(f"CNA {node}, {state}")
+                            cna_assignment[state] = node
+
+                    mut_a[node], mut_b[node] = mut_a_iv[node].x, mut_b_iv[node].x
+                    tot_a[node], tot_b[node] = copy_a[node].x, copy_b[node].x
+
+                model_vars = node_assignment, cna_assignment, mut_a, mut_b, tot_a, tot_b 
+
+                return obj_val, model_vars
+
+            except AttributeError:
+                return -1, -1       # TODO not a good way to exit, will be fixed

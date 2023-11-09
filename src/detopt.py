@@ -1,420 +1,470 @@
-# detopt.py
-# please note that this file uses some functions from detopt_dev.py
+""" detopt.py
 
-import os, json, argparse
-import pandas as pd
-import polars as pl
-from ast import literal_eval as lit
-from detopt_placements import optimise
-from detopt_util import *
-from itertools import combinations, permutations
-import time
+`DETOPT` is a a combinatorial optimization method for DETermining 
+Optimal Placement in Tumor progression history of single nucleotide 
+variants (SNVs) from the genomic regions impacted by copy-number 
+aberrations (CNAs) using multi-sample bulk DNA sequencing data
+"""
+
+__version__ = '0.1.0'
+__author__ = 'Chih Hao Wu'
+
+import argparse
 from copy import deepcopy
+import os
+import re
+import time
+from tqdm import tqdm
+import pandas as pd
+# import polars as pl
 
-C_MAX = 100
-
-parser = argparse.ArgumentParser(description='DETOPT (DETermining Optimal Placement in Tumor progression history)', add_help=False)
-parser.add_argument('--help', action='help',
-    help='show this help message and exit')
-parser.add_argument('-s', '--snv_file', required=True, type=str,
-                    help='*.input.tsv file containing information about read counts and allele-copy number calls of SNVs')
-parser.add_argument('-t', '--tree_file', required=True, type=str,
-                    help='*.tree file containing information for each subclone, the PARENT_ID, MUTATIONS_AT_NODE, SAMPLE_IDS, NODE_FREQUENCIES')
-parser.add_argument('-h', '--samples', required=True, type=str,
-                    help='number of samples')
-parser.add_argument('-p', '--cna_weight', default=0.25, type=str,
-                    help='regularization value/weight')
-parser.add_argument('-d', '--data_dir', required=True, type=str,
-                    help='directory containing required snv and tree files')
-parser.add_argument('-o', '--out', required=True, type=str,
-					help='output filename, optionally with filepath')
-args = parser.parse_args()
-
-decifer_file = args.snv_file
-tree_file = args.tree_file
-n_arg = int(args.samples)
-DATA_DIR = args.data_dir
-
-vaf_reg, cna_reg = 1, args.cna_weight
-
-num_threads = os.environ.get('SLURM_CPUS_PER_TASK')
-if not num_threads: 
-	num_threads = 4
-else: num_threads = int(num_threads)
-print(f"Using {num_threads} threads.")
+from detopt_placements import optimise
+from detopt_util import state2tup, difference_from_diploid
 
 
-def parse_tree(df, num_samples, true_tree=[], is_true_tree=False):
-	# subsample `num_samples` number of samples
-	samples = df.iloc[0]['SAMPLE_IDS'].split(',')
-	if 'MASTER_SAMPLE' in samples: samples.remove('MASTER_SAMPLE')	
-	samples_chosen = samples[:num_samples]
-	vec, freqs = {}, {}
-	for (i, row) in df.iterrows():
-		node = row['NODE_ID']
-		freqs[node] = {}
-		vec[node] = row['PARENT_ID']
-		if not is_true_tree: # pairtree nodefreqs
-			nodefreqs = row['NODE_FREQUENCIES'].split(',')
-		else: # ground truth
-			nodefreqs = row['SAMPLE_NODE_FREQUENCIES'].split(',')
-		samples = row['SAMPLE_IDS'].split(',')
-		
-		#if is_true_tree:
-		for i in range(len(samples)):
-			sample = samples[i]
-			if sample in samples_chosen:
-					freqs[node][sample] = float(nodefreqs[i])
-	"""if not is_true_tree:
-		assert(true_tree != []), 'Must provide ground truth tree as well!'
-		for node in vec.keys():
-			if node == 'ROOT':
-				continue
-			freqs[node] = freqs_from_true_tree(node, true_tree) #calc_observed_prevalence(node, df, decifer_df, vec, samples_chosen, vafs, 'MUTATIONS_AT_NODE')
-		freqs = append_root_prevalence(freqs)
-	"""
-	return vec, freqs, samples_chosen
+def set_n_threads() -> int:
+    """Set the number of threads
+
+    Set the number of threads to the number of `SLURM_CPUS_PER_TASK` allocated
+    or 4, by default if `DETOPT` is not being run on a machine in a cluster.
+
+    Returns:
+        int: The number of threads to use
+    """
+    n_threads = os.environ.get('SLURM_CPUS_PER_TASK')
+    if not n_threads: 
+        n_threads = 4
+    else: 
+        n_threads = int(n_threads)
+    print(f"Using {n_threads} threads")
+    return n_threads
 
 
-def parse_data(df, mut):
-	states, vafs = [], {}
-	df = df[df['mut_index'] == mut]
-	state_cols = [col for col in df.columns if 'state' in col and 'normal' not in col]
-	#print(state_cols, df)
+def parse_tree(df: pd.DataFrame, samples: list) -> tuple:
+    """Parse `tree_file` to get tree topology and sample node frequencies
 
-	for col in state_cols:
-		#print(col)
-		state = tuple(df.iloc[0][col].split('|')) # BUG cannot split NaN copy number states FIXED
-		states.append(state)
+    <description TBD>
 
-	for (i, row) in df.iterrows():
-		var = row['var_reads']
-		tot = row['ref_reads'] + row['var_reads']
-		if var > 0 and tot == 0:
-			vaf = 1.
-		elif var == 0 and tot == 0:
-			vaf = 0.
-		else:
-			vaf = row['var_reads'] / (row['ref_reads'] + row['var_reads'])
-		sample = row['sample']
-		vafs[sample] = vaf
-	return states, vafs
+    Args:
+        df (pd.DataFrame): a `pd.DataFrame` for `tree_file`
+        samples (list): a (sub)set of samples in entries of df in columns `NODE_FREQUENCIES`
 
-def parse_mutation_data(df, mut, samples_chosen):
-	states, vafs, = [], {}
-	df = df[df['sample'] != 'MASTER_SAMPLE']
-	df = df[df['sample'].isin(samples_chosen)]
-	df = df[df['mut_index'] == mut]
-	state_cols = [col for col in df.columns if 'state' in col and 'normal' not in col]
-	prop_cols = [col for col in df.columns if 'prop' in col and 'normal' not in col]
+    Returns:
+        tuple:
+            vec (dict): A mapping from a node to its parent, given from the tree
+            freqs (dict): The sample node frequencies for each sample, in each node
+    """
+    vec, freqs = {}, {}
 
-	assert(len(state_cols) == len(prop_cols))
+    for _, row in df.iterrows():
+        node = row.NODE_ID
+        freqs[node] = {}
+        vec[node] = row.PARENT_ID
 
-	# populate `states`	
-	for i in range(len(state_cols)):
-		state = df.iloc[0][state_cols[i]]
-		state = state2tup(state)
-		states.append(state)
-
-	# populate `vafs` per sample (each sample is a row in this df)
-	for (i, row) in df.iterrows():
-		# `vafs` first
-		vaf = row['var_reads'] / (row['ref_reads'] + row['var_reads'])
-		sample = row['sample']
-		if sample in samples_chosen:
-			vafs[sample] = vaf
-
-	#print(states, vafs)
-	return states, vafs
-
-def propagate(assignment, anc, vec, nodes):
-	'''
-	fill in the copy numbers of all descendants of aberrant nodes as the same state
-	fill in all other nodes as the diploid state
-
-	propagate to descendants starting from the node closest to the root
-	'''
-	assignment_copy = copy.deepcopy(assignment)
-	nodes_left = copy.deepcopy(nodes)
-	nodes_left.remove('ROOT')
-
-	nodes_ordered = sorted(assignment.keys(), key=lambda node: distance_from_root(node, vec))
-	for aberrant_node in nodes_ordered:
-		for node in descendants(aberrant_node, anc):
-			assignment_copy[node] = assignment.get(node, assignment[aberrant_node]) #assignment[aberrant_node] # propagate the same state to descendants
-			if node in nodes_left:
-				nodes_left.remove(node)
-	for node in nodes_left: # remaining nodes get diploid state
-		assignment_copy[node] = (1,1)
-
-	assignment_copy['ROOT'] = (1,1)
-	return assignment_copy
+        row_samples, row_nodefreqs = row.SAMPLE_IDS.split(','), row.NODE_FREQUENCIES.split(',')
+	
+        for i, sample in enumerate(row_samples):
+            if sample in samples:
+                freqs[node][sample] = float(row_nodefreqs[i])
+    
+    return (vec, freqs)
 
 
-def satisfies_isa(state_assignment, vec):
-	# for CNAs, we use the weak ISA states that if all copies of a seg are lost
-	# then they cannot be gained again. So no 0 -> 1 pattern
-	for node in vec.keys():
-		parent = vec[node]
-		state_of_child = state_assignment[node]
-		state_of_parent = state_assignment.get(parent, (1,1))
-		if int(state_of_parent[0]) == 0 and int(state_of_child[0]) > 0:
-			return False
-		if int(state_of_parent[1]) == 0 and int(state_of_child[1]) > 0:
-			return False
-	return True
+def node_desc_presence(freqs: dict, vec: dict) -> dict:
+    """In a post-order traversal of the tree, calculate the descendant cell fraction of a
+    subclone, respresented by nodes.
+
+    The node sample prevalence, or the descendant cell fraction, can be obtained by summing 
+    the frequency in node v and all its descendents.
+
+    Args:
+        freqs (dict): The sample node frequencies for each sample, in each node
+        vec (dict): A mapping from a node to its parent, given from the tree
+
+    Returns:
+        node_prevalence (dict): The node sample prevalence of nodes in tree
+    """
+    tree_struc, freqs_dict = deepcopy(vec), deepcopy(freqs)
+    
+    node_frequency = pd.DataFrame.from_dict(freqs_dict).T
+    node_frequency.drop("ROOT", axis=0, inplace=True)
+    
+    del tree_struc['ROOT']
+    
+    while tree_struc != {}:
+        leaves = []
+        for node in tree_struc.keys():
+            if node not in tree_struc.values():
+                leaves.append(node)
+                if tree_struc[node] == "ROOT": continue
+                parent = tree_struc[node]
+                node_frequency.loc[parent,:] = (node_frequency.loc[parent,:] + 
+                                                node_frequency.loc[node,:]
+                                                )
+        for l in leaves:        
+            del tree_struc[l]
+    
+    return node_frequency.T.to_dict()       # node_prevalence
 
 
-def assignCNAs_update(
-		                mutation: str, 
-	                    vec: dict, 
-			            node_freqs: dict, 
-			            states: list, 
-			            vafs: dict,
-						frac_cns: dict, 
-						sample_node_frac: dict,
-			            num_threads: int
+# TODO put back into detopt_util.py
+def parse_frac_cns_patient(snv: pd.DataFrame, mode: str='segmental', 
+                           *mutation_list: list
+                           ) -> dict: 
+    """<main>
+
+    <desc>
+
+    Args:
+        snv (pd.DataFrame): A `pd.DataFrame` containing information about
+        read counts and allele-copy number calls of SNVs
+        mode (str): The mode to parse copy-number state. Currently, just 
+        segmental fractional copy number state
+        mutation_list (list): optional, a list which elements are a 
+        subset of mutations
+
+    Returns:
+        frac_cns (dict): The fractional copy number state of each segment
+        on which a mutation is on, for each sample
+
+    Raises:
+        ValueError: if `mode` == 'segmental'; other modes not yet implemented
+    """
+    prop_cols, state_cols = [], []
+    frac_cns = {}
+
+    for col in snv.columns:
+        
+        is_pattern = bool(re.match(r'.*(?:_prop|_state)', col))
+        match is_pattern:
+            case True:
+                suffix = col.split('_')[-1]
+                if suffix == 'prop' and 'normal' not in col:
+                    prop_cols.append(col)
+                elif 'normal' not in col:
+                    state_cols.append(col)        
+            case _:
+                pass
+
+    total_rows = len(snv)
+
+    for i, row in snv.iterrows():
+
+        #print(f"Progress: {i+1}/{total_rows}", end='\r')
+        
+        mut = row.mut_index
+        if mutation_list and (mut not in mutation_list): continue       # if a list of SNVs is provided, then use only those SNVs
+        if ({row[state] for state in state_cols} == {'1|1'}): continue  # skip copy-number neutral variants
+
+        sample = row['sample']
+
+        if mut in frac_cns.keys():  pass
+        else:
+            frac_cns[mut] = {}
+ 
+        frac_cns[mut][sample] = 0.
+
+        if mode == 'segmental':
+            for prop_col, state_col in zip(prop_cols, state_cols):
+                total_copy_number= sum(map(int, row[state_col].split('|')))
+                frac_cns[mut][sample] = (frac_cns[mut][sample] + 
+                                         (total_copy_number * row[prop_col])
+                                         )
+            frac_cns[mut][sample] = frac_cns[mut][sample] + (2. * row['normal_prop'])
+        else:
+            raise ValueError('Not yet implemented')
+
+    #print(f"Progress (frac_cns): {i+1}/{total_rows}")
+    return frac_cns
+
+
+def parse_mutation_data(snv: pd.DataFrame, mut: str, samples: list) -> tuple:
+    """<main>
+
+    <desc>
+
+    Args:
+        snv (pd.DataFrame): A `pd.DataFrame` containing information about
+        read counts and allele-copy number calls of SNVs
+        mut (str): A uniquely identified SNV
+        samples (list): A (sub)set of samples
+
+    Returns:
+        tuple:
+            states (list): A list of all states (str, str) for the copy number 
+            states of the region on which `mut` is present
+            vafs (dict): The variant allele frequency (VAF) of `mut` in each sample 
+    """
+    snv = snv[(snv.mut_index == mut) & (snv['sample'].isin(samples))]
+
+    # TODO consider placing as standalone function
+    prop_cols, state_cols = [], []
+    for col in snv.columns:
+    
+        is_pattern = bool(re.match(r'.*(?:_prop|_state)', col))
+        match is_pattern:
+            case True:
+                suffix = col.split('_')[-1]
+                if suffix == 'prop' and 'normal' not in col:
+                    prop_cols.append(col)
+                elif 'normal' not in col:
+                    state_cols.append(col)        
+            case _:
+                pass
+
+    assert len(state_cols) == len(prop_cols), "Number of state cols and prop cols should be the same"
+
+    states, vafs = [0] * len(state_cols), {}
+
+    # populate `states`
+    for i, state_col in enumerate(state_cols):
+        state = snv.iloc[0][state_col]
+        states[i] = state2tup(state)
+
+    # populate `vafs` per sample, where each sample is a row in `snv``
+    for _, row in snv.iterrows():
+
+        vaf = row.var_reads / (row.ref_reads + row.var_reads)
+        sample = row['sample']
+
+        if sample in samples:
+            vafs[sample] = vaf
+
+    return states, vafs
+
+
+def assignCNAs_update(mutation: str, 
+                      vec: dict, 
+                      node_freqs: dict,
+                      states: list, 
+                      vafs: dict, 
+                      frac_cns: dict, 
+                      sample_node_frac: dict,
+                      n_threads: int, 
+                      cna_reg: float,
+                      vaf_reg: float=1.
 			        ):
-	"""given mutation and following, assign copy number state to each node in tree
+    """<main>
 
-	UPDATED BRUTEFORCE desc. TODO use `networkx` for easier handling of ances/desc relationships, etc.
+    <desc>
 
-	Parameters
-	----------
-	mutation: str
-		identifier for mutation that is being placed
-	vec: dict
-		maps a node (subclone) to its ancestor (subclone), root has NaN ancestor
-		key is node, value is ancestor
-	node_freqs: dict
-		frequency of each sample at the node
-	states: list (tuple)
-		copy number state assigned to mutation, of segment
-	vafs: dict
-		variant allele frequencies of mutation in each sample
-	frac_cns: dict
-		fractional copy number of each mutation in each sample {mut1: {sample1: cn1 , sample2: cn2}, mut2: {sample1: cn1 , sample2: cn2}}
-	num_threads: int
-		number of threads
-	"""
+    Args:
+        mutation (str): A uniquely identified copy-number aberrant SNV
+	    vec (dict): A mappping from each node (subclone) to its uniquely 
+        identified parental node (subclone). The root has NaN ancestor, 
+        for sake of non-empty parental node.
+		node_freqs (dict): The sample node frequencies for each sample, 
+        in each node
+	    states (list): A list of all states (str, str) for the copy number 
+        states of the region on which `mut` is present
+        vafs (dict): The variant allele frequency (VAF) of `mut` in each sample
+	    frac_cns (dict): The fractional copy number state of each segment
+        on which a mutation is on, for each sample
+        n_threads (int): The number of threads used by Gurobi (or eq. solver)
 
-	# assignment_scores = {} # maps assigned node to its score from our qilp	
-	# anc = vec_to_anc_matrix(vec) # each key corresponds to a node, values are all other nodes with values 1 if is descendent of node, else 0
+    Returns:
+        tuple:
+            objective (float): The objective score returned by `DETOPT`, 
+            refer to the objective function in the manuscript
+            node_assigned (int): The node (subclone) to which the mutational
+            event was assigned for the `mut`
+            state_assignment (int): The node (subclone) to which the copy
+            number change event(s) was (were) assigned for the `mut`
+    """
+    states = [tuple(map(int, cns)) for cns in states]
+    states = sorted(states, key=difference_from_diploid)        # sorting by total number of copy number changes for both alleles
+    states = list(set(states))
 
-	# nodes = list(vec.keys())
-	# non_root_nodes = [n for n in nodes if n != "ROOT"]
+    obj_val, model_vars = optimise(states,
+                                   vec,
+                                   node_freqs,
+                                   vafs,
+                                   frac_cns[mutation],
+                                   sample_node_frac,
+                                   vaf_reg,
+                                   cna_reg
+                                   )
 
-	states = [tuple(map(int, cns)) for cns in states]
-
-	states = sorted(states, key=difference_from_diploid) # sorting by total number of copy number changes (either up/down) for both alleles
-
-	states = list(set(states))
-
-	objective, node_assigned, state_assignment = optimise(
-												states, 
-												vec,
-												node_freqs, 
-												vafs, 
-												frac_cns[mutation],
-												sample_node_frac,
-												vaf_reg, 
-												cna_reg
-												)
-
-	#print(f"\tOptimal assignment: Mutation {mutation} attaches to Node {node_assigned}")
-
-	# bestasg = values_to_tuple(lit(bestasg)) # revert hashed assignment
-	return objective, node_assigned, state_assignment
+    return obj_val, model_vars
 
 
-def get_impliedvaf(v, t, actual):
-	if t == 0.0: return actual
-	else: return v / t
+def write_detopt_assignments(assignments: dict, max_n_states: int, filename_prefix: str):
+    """<main>
+
+    <desc>
+
+    Args:
+
+    Returns:
+
+    """
+    # write output for assignments 
+    header_cols = ['mut_index','snv_assignment']
+    for n in range(max_n_states):
+        header_cols += [f'cna_state_{n}', f'cna_assignment{n}'] 
+    header = '\t'.join(header_cols) + '\n'
+
+    with open(f'{filename_prefix}_assignments.tsv', 'w') as file:
+        file.write(header)
+
+        for mut in assignments:
+            cna_str = [f'{state}\t{asg}' for state, asg in assignments[mut]['cna'].items()]
+            cna_str = '\t'.join(cna_str)
+            file.write(f"{mut}\t{assignments[mut]['snv']}\t{cna_str}\n")
+
+    return None
 
 
-def parse_frac_cns_polars_seg(true_tree, exp, lookup_pl, samples_chosen, mode='segmental'):
-	'''
-	parse fractional copy numbers only from ground truth tree
-	parse them only for copy aberrant mutations
-	return a dict that maps
-	mutation -> sample -> mutational fractional copynumber
-	mode can be 'mutational' or 'segmental'
-	'''
-	if mode not in ['mutational','segmental']: return {}
-	frac_cns = {}
-	vec = tree_df_to_vec(true_tree)
-	anc = vec_to_anc_matrix(vec)
-	cna_ids = [i for i in (set(exp['CNA_IDS'])) if not isinstance(i, float)]
-	impacted_muts = list(map(lambda x : x.replace('cna_', ''), cna_ids))
+def write_detopt_copy_number(copies: dict, filename_prefix: str, mutant_copies: bool=False):
+    """<main>
 
-	for mut in impacted_muts:
-		node_of_mut = exp[exp['SNV_IDS'] == mut]['NODE_ID'].iloc[0]
-		node_of_cna = exp[exp['CNA_IDS'] == 'cna_'+mut]['NODE_ID'].iloc[0]
-		frac_cns[mut] = {}
-		for sample in samples_chosen:
-			frac_cns[mut][sample] = 0.
-			for node in vec.keys():
-				if mode == 'mutational': 
-					if node == 'ROOT': continue
-					ncopies = calc_mut_copies(exp, mut, node, node_of_mut, node_of_cna, anc) # never goes here
-				else: # for segmental fractional CN, count the root
-					ncopies = calc_seg_copies(exp, mut, node, node_of_mut, node_of_cna, anc) 
-				nodefreq = lookup_pl.filter((pl.col("NODE_ID") == node) & (pl.col("SAMPLE_IDS") == sample)).select("SAMPLE_NODE_FREQUENCIES").item()
-				frac_cns[mut][sample] = frac_cns[mut][sample] + (ncopies * float(nodefreq))
-	return frac_cns
+    <desc>
 
+    Args:
 
-def node_desc_presence(freqs, vec):
-	# NEW oct 5, 2023 new constr. returns node sample prevalence summing frequency in node v and its descendents
+    Returns:
+    
+    """
+    # write output for allele-specific (mutant) copy number state assignments
+    rows = [0] * len(copies)
+    muts = copies.keys()
 
-	tree = deepcopy(vec)
-	freqs_dict = deepcopy(freqs)
+    for i, mut in enumerate(muts):
 
-	node_frequency = pd.DataFrame.from_dict(freqs_dict).T
-	node_frequency = node_frequency.drop("ROOT", axis=0)
+        alleles = [copies[mut]['a'], copies[mut]['b']]
 
-	del tree['ROOT']
+        mut_copies_both_alleles = {}
+        for node in copies[mut]['a'].keys():
+            mut_copy_states = ','.join([str(int(allele[node])) for allele in alleles])
+            mut_copies_both_alleles[node] = f"{mut_copy_states}"
 
-	while tree != {}:
-		r = []
-		for n in tree.keys():
-			if n not in tree.values():
-				r.append(n)
-				if tree[n] == "ROOT": continue
-				p = (tree[n])
-				node_frequency.loc[p,:] = node_frequency.loc[p,:] + node_frequency.loc[n,:] 
-		for s in r:        
-			del tree[s]
-			
-	return node_frequency.T.to_dict()
+        rows[i] = mut_copies_both_alleles
+
+    mut_copies_df = pd.DataFrame(rows)
+    mut_copies_df['mut_id'] = muts
+    mut_copies_df.set_index('mut_id', inplace=True)
+
+    if mutant_copies:
+        mut_copies_df.to_csv(f'{filename_prefix}_mut_copy_numbers.tsv', sep='\t')
+    else:
+        mut_copies_df.to_csv(f'{filename_prefix}_tot_copy_numbers.tsv', sep='\t')
+    
+    return None
 
 
 def main():
-	
-	start_time = time.time()
-	outstring = ""
+    parser = argparse.ArgumentParser(
+                        prog='DETOPT',
+                        description='(DETermining Optimal Placement in Tumor progression history)',
+                        prefix_chars='-+',
+                        add_help=False
+                        )
+    parser.add_argument('+h', '++help', action='help')
+    parser.add_argument('-p', '--cna_reg', nargs='?', default=.25, 
+                        type=float, help='regularization weight (default: %(default)s)'
+                        )
+    parser.add_argument('-h', '--n_samples', nargs='?', type=int,
+                        help='number of samples'
+                        )
+    parser.add_argument('-d', '--data_dir', required=True, type=str,
+                        help='directory containing required `snv_file` and `tree_file` files'
+                        )
+    parser.add_argument('-o', '--out', required=True, type=str,
+                        help='output filename prefix, optionally with filepath'
+                        )
+    parser.add_argument('-s', '--snv_file', required=True, type=str,
+                        help='`snv_file` file containing information about read counts\
+                              and allele-copy number calls of SNVs'
+                        )
+    parser.add_argument('-t', '--tree_file', required=True, type=str,
+                        help='`tree_file` file containing information about the base tree'
+                        )
+    args = parser.parse_args()
 
-	num_threads = os.environ.get('SLURM_CPUS_PER_TASK')
-	if not num_threads: 
-		num_threads = 4
-	else: num_threads = int(num_threads)
-	print(f"Using {num_threads} threads.")
-	
-    # ALL HARDCODED
-	decifer_df = pd.read_csv(f'{DATA_DIR}/{decifer_file}', sep='\t', header=0, index_col=False)
-	tree = pd.read_csv(f'{DATA_DIR}/{tree_file}', sep='\t', header=0, index_col=False)
-	samples = tree.iloc[0]['SAMPLE_IDS'].split(',')
-	if 'MASTER_SAMPLE' in samples: samples.remove('MASTER_SAMPLE')
-	samples_chosen = samples[:n_arg] # consider shuffling
-	#print(samples_chosen)
-	muts_tested = sorted(sample_aberrant_muts(decifer_df))
-	#all_mutations = list(set(decifer_df['mut_index'].values))
-	print("MUTS TESTED:", sorted(muts_tested))
-	#vafs = parse_vafs(decifer_df, samples_chosen)
-	vec, freqs, samples_chosen = parse_tree(tree, n_arg, is_true_tree=False)
-	sample_node_frac = node_desc_presence(freqs, vec)
-	#exp = expl(tree)
+    start_time = time.time()
 
-	# Jul 25 speed up
-	#quick_lookup = exp[['NODE_ID','SAMPLE_IDS','SAMPLE_NODE_FREQUENCIES']]
-	#quick_lookup = quick_lookup.sort_values(['NODE_ID','SAMPLE_IDS']).drop_duplicates()
-	#pl_quick = pl.from_pandas(quick_lookup)
-	
-	# frac_cns = parse_frac_cns(tree, exp, samples_chosen, 'segmental') # long running time, scales poorly with number of mutations and number of nodes
-	#frac_cns = parse_frac_cns_polars_seg(tree, exp, pl_quick, samples_chosen, 'segmental')
-	frac_cns = parse_frac_cns_patient(decifer_df, '111e6e61e1') # ??? placing only cn calls of neoantigens? ###CHANGE SAMPLE NAME HERE; fucks up without it # MAKE SURE TO ALSO CHANGE DETOPT UTIL.PY FILE
-	muts_tested = frac_cns.keys()
+    snv_file, tree_file, data_dir  = args.snv_file, args.tree_file, args.data_dir
+    n_samples = args.n_samples
+    vaf_reg, cna_reg = 1, args.cna_reg
 
-	#print(frac_cns)
-	print(vec)
-	#print(sample_node_frac)
-	
-	#start_time = time.time()
-	
-	#for mut in muts_tested:
-	for mut in ["11:70031751-70031751_G>T","11:6477707-6477707_G>A","9:4833182-4833182_C>G","16:88947822-88947822_C>T","9:5090566-5090566_G>T","6:152419920-152419920_T>A","3:178952085-178952085_A>T","16:89350644-89350644_G>C"]:
-		print(mut)
+    n_threads = set_n_threads()
 
-		#print(mut) # 9:90252946-90252946 A>C not placed; reason is because there are more than 1 tumour states in decifer.input and it is looking at the one with 1|1
-		
-		# parse the data and solve the model for each mutation individually
-		states, vafs_of_mut = parse_mutation_data(decifer_df, mut, samples_chosen)
-		states = [s for s in states if s != ('1', '1')] # FIXME does this force mutational loci to only have 1 copy number state change event? How is it exploring assignments between?
-		# ADD BACK print(states)
-		if states == [('1', '1')]: continue # 9:90252946-90252946 A>C not placed (because of this)
-		#states.remove(('1', '1'))
-		# ADD BACK print(f"\nmutation: {mut}, abberant copy number states: {states}\n")
+    if not data_dir.endswith('/'):
+        data_dir = data_dir+'/'
+    else: pass
+    
+    snv_df = pd.read_csv(f'{data_dir}{snv_file}', sep='\t', header=0, index_col=False)
 
-		#start_time_cn_segment = time.time()
-		
-		objective_score, node_of_mutation, state_assignment = assignCNAs_update(
-			mut, vec, freqs, states,
-			vafs_of_mut, frac_cns, 
-			sample_node_frac,
-			num_threads
-		)
-		
-		#print(f"\tRuntime for segment {time.time() - start_time_cn_segment}")
-		#for sample, vaf in vafs_of_mut.items():
-		#	print(f"{sample: <45}{round(vaf, 5)}")
+    tree_df = pd.read_csv(f'{data_dir}{tree_file}', sep='\t', header=0, index_col=False)
+    samples = tree_df.loc[0, 'SAMPLE_IDS'].split(',')
+    if not n_samples:
+        samples = samples[:n_samples]       # optional to use fewer samples
+    else: pass
 
-		# print("\n")
-		 
-		#node_of_mutation, bestasg, bestmodel = assignCNAs_BTFE(
-	    #	mut, vec, freqs, states,
-		#	vafs_of_mut, frac_cns, 
-		#	num_threads
-		#	)
-		
-		try:
-			outstring += f"{mut}\t{objective_score}\t{node_of_mutation}\t{':'.join([f'{s[0][0]} {s[0][1]} {s[1]}' for s in state_assignment])}\n"
-			print(f'\tMutation {mut} assigned to Node {node_of_mutation}')
-		except TypeError:
-			print(f"MUTATION: {mut} has no assignment satisfying constraints")
-			
-		### UNCOMMENT THIS print(f'\tMutation {mut} assigned to Node {node_of_mutation}') ###
-		#print(f"vars {bestmodel}")
-		#print(f"Best objective for mutation {mut} : {bestmodel.objVal}")
+   #print(f"There are {len(samples)} samples")
 
-	
-		"""mut_assignments[mut] = {}
-		mut_assignments[mut]['Node'] = node_of_mutation
-		mut_assignments[mut]['Objective'] = bestmodel.objVal
-		A, B, delta, psi = grab_vars(bestmodel, bestasg.keys())
-		for node in bestasg.keys():
-			if node == 'ROOT': 
-				bestasg[node] = (bestasg[node][0], bestasg[node][1], 0) # mutational CN = 0
-			else: 
-				bestasg[node] = (bestasg[node][0], bestasg[node][1], int(A[node] + B[node]))
-		mut_assignments[mut]['Assignment'] = bestasg"""
-        
-	#print(f"\nRuntime: {time.time() - start_time}")
+    vec, freqs = parse_tree(tree_df, samples)
+    sample_node_frac = node_desc_presence(freqs, vec)
+    frac_cns = parse_frac_cns_patient(snv_df, mode='segmental')
 
-	with open(f"{args.out}.detopt.tsv", "w") as o:
-		o.write(outstring)
-	
-		"""with open(f"{args.out}.detopt.tsv", "w") as o:
-			o.write('Variant key\tNode\tObjective\tAssignment\n')
-			for mut in mut_assignments:
-				asg = mut_assignments[mut]['Assignment']
-				node_assigned = mut_assignments[mut]['Node']
-				line = [mut, node_assigned,
-						mut_assignments[mut]['Objective'], asg]
-				o.write(floatjoin(line, '\t') + '\n')"""
+    muts = frac_cns.keys()
 
-	"""print(f"Wrote {args.out}.detopt.tsv")"""
-	print(f"Total Runtime: {time.time() - start_time}")
+    assignments = {}
+    mut_copies, tot_copies = {}, {}
+    max_n_states = 1
 
-	#return A, B, delta, psi
-	return 0
-	
+    for mut in tqdm(muts, colour='green'):
+    
+        # parse the data and solve the model for each mutation individually
+        mut_states, mut_vafs = parse_mutation_data(snv_df, mut, samples)
+        mut_states = [s for s in mut_states if s != ('1', '1')]
 
+        n_unique_states = len(set(mut_states))
+        if n_unique_states > max_n_states: max_n_states = n_unique_states
 
-def obj(mut):
-	# For testing: retrieve all objective values for a given mutation
-	return {x : abs(vafs[mut][x] - impliedvafs[x]) for x in vafs[mut].keys()}
+        obj_val, model_vars = assignCNAs_update(mutation=mut,
+                                                vec=vec,
+                                                node_freqs=freqs,
+                                                states=mut_states,
+                                                vafs=mut_vafs,
+                                                frac_cns=frac_cns,
+                                                sample_node_frac=sample_node_frac,
+                                                n_threads=n_threads,
+                                                vaf_reg=vaf_reg,
+                                                cna_reg=cna_reg
+                                                )
 
+        if obj_val >= 0:
+            node_assignment, cna_assignment, mut_a, mut_b, tot_a, tot_b = model_vars
+            #print(f'{mut}:\tOBJ_VAL -> {obj_val}\tSNV -> {node_assignment}\tCN -> {cna_assignment}')
 
-if __name__ == '__main__': 
-	#A, B, delta, psi = 
-	main()
+            assignments[mut] = {'snv': node_assignment, 
+                                'cna': cna_assignment
+                                }
+            
+            mut_copies[mut] = {'a': mut_a,
+                               'b': mut_b
+                               }
+            
+            tot_copies[mut] = {'a': tot_a,
+                               'b': tot_b
+                               }
+        else:
+            #print(f'{mut} has no assignments satisfying constraints')
+            pass
+
+    print(f"Total Runtime: {round(time.time() - start_time, 2)} seconds")     # TODO add progress bar
+
+    # write outputs
+    write_detopt_assignments(assignments, max_n_states, args.out)
+
+    # write output for allele-specific mutant copy number state assignments 
+    write_detopt_copy_number(mut_copies, args.out, mutant_copies=True)
+
+    # write output for allele-specific total copy number state assignments 
+    write_detopt_copy_number(tot_copies, args.out)
+
+    print(f"Wrote outputs to files: {args.out}*") 
+
+if __name__ == '__main__':
+    main()
