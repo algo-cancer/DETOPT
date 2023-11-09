@@ -110,7 +110,7 @@ NODE_ID    PARENT_ID    MUTATIONS_AT_NODE    SAMPLE_IDS                 NODE_FRE
 [4355](real_data/demo/README.md) |Demo of `DETOPT` on metastatic breast cancer patient 4355[^1] with 18 samples|[here](real_data/demo/README.md#Output-of-DETOPT-on-patient-4355-data)
 
 ```console
-(detopt) $ python src/detopt.py -s 4355.snvs.input -t 4355.tree -h 18 -d real_data/demo/demo_inputs -o real_data/demo/results
+(detopt) $ python src/detopt.py -d real_data/demo/demo_inputs -o real_data/demo/demo_outputs/4355 -s 4355.snvs.input -t 4355.tree
 ```
 
 <a name="support"></a>
