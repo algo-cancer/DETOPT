@@ -7,14 +7,15 @@ This is the repository for `DETOPT` a combinatorial optimization method for **DE
   2. [Usage](#usage)
      * [required input data](#input)
      * [output](#output)
-  4. [Demos](#demos)
+  3. [Demos](#demos)
      * [**summary information**](real_data/demo/README.md#Multi-region-longitudinal-bulk-DNA-sequenced-samples-from-metastatic-breast-cancer-(mBrCa)-patient)
      * [**longitudinal consistency analysis**](real_data/longitudinal_consistency)
+     * [**variant placements**](real_data/variants_placements)
+  4. [Support](#support)
+
 <!---(real_data/demo/README.md#Longitudinal-consistency-of-base-tree-topology)--->
-     * [**variant placements**](real_data/variants_placements) 
 <!---(real_data/demo/README.md#Output-of-DETOPT-on-patient-4355-data)--->
-  6. [Support](#support)
-    
+
 <a name="install"></a>
 # Installation
 Clone the repository locally 
