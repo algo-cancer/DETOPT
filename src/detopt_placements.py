@@ -4,6 +4,10 @@ From a fixed tree constructed using `CITUP2` using copy number neutral
 mutations, assign the placement at a node where a copy number affected 
 mutation and the node(s) at which the copy number state changes to a 
 distinct state.
+
+ChangeLog:
+    11/21/2023: (Lines 536-537) Round gp.GRB.INTEGER values to nearest
+    integer values
 """
 
 import gurobipy as gp
