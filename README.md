@@ -70,7 +70,7 @@ options:
 
   `DETOPT` requires two (2) input files. The first contains the read counts and copy-number states (as obtained from HATCHet[^2], or any allele- and clone-specific copy-number caller) for each mutation, including both copy-number neutral and aberrant SNVs, in each sample. The second describes the base tree topology, constructed by the use of only copy-number neutral SNVs, with inferred sample node (subclone) frequencies.
   
-**SNV file**. `--snv_file <SNV_FILE>` This file contains information for each SNV, the read counts mapping to the variant and reference alleles and the allele- and clone-specific copy number calls. `hatchetconvert.py` is provided for the conversion of a `.seg.ucn` file from HATCHet ([example](real_data/demo/demo_data/best.seg.ucn)) and a mutation tab-separated `.tsv` file ([example](real_data/demo/demo_data/111e6e61e1_all_mutations.tsv)) into an input file for DETOPT with fields,
+**SNV file**. `--snv_file <SNV_FILE>` This file contains information for each SNV, the read counts mapping to the variant and reference alleles and the allele- and clone-specific copy number calls. `hatchetconvert.py` is provided for the conversion of a `.seg.ucn` file from HATCHet ([example](real_data/hatchet_output/best.seg.ucn)) and a mutation tab-separated `.tsv` file ([example](real_data/snv_data/snv_data.tsv)) into an input file for DETOPT with fields,
 
 ```
 mut_index    sample    var_reads    ref_reads    normal_state    normal_prop    tumor1_state    tumor1_prop    tumor2_state    tumor2_prop
